@@ -37,22 +37,32 @@ class Retriever:
         self._by_id = {d["id"]: d for d in self.corpus}
 
         client = chromadb.PersistentClient(path=persist_directory) if persist_directory else chromadb.EphemeralClient()
-        self._collection = client.get_or_create_collection(
+        try:
+            existing = client.get_collection(name=collection_name)
+        except Exception:
+            existing = None
+
+        if existing is not None and existing.count() == len(self.corpus):
+            self._collection = existing
+            return
+
+        if existing is not None:
+            # Stale collection (wrong doc count, wrong embedding dimension,
+            # or corpus changed) — a full delete+recreate wipes any
+            # incompatible index config, not just the documents.
+            client.delete_collection(name=collection_name)
+
+        self._collection = client.create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
         )
 
-        if self._collection.count() != len(self.corpus):
-            existing_ids = self._collection.get()["ids"]
-            if existing_ids:
-                self._collection.delete(ids=existing_ids)
-
-            embeddings = embed_fn([d["text"] for d in self.corpus])
-            self._collection.add(
-                ids=[d["id"] for d in self.corpus],
-                documents=[d["text"] for d in self.corpus],
-                embeddings=[vec.tolist() for vec in embeddings]
-            )
+        embeddings = embed_fn([d["text"] for d in self.corpus])
+        self._collection.add(
+            ids=[d["id"] for d in self.corpus],
+            documents=[d["text"] for d in self.corpus],
+            embeddings=[vec.tolist() for vec in embeddings]
+        )
 
     def retrieve(self, query: str, *, top_k: int = 3) -> list[dict[str, Any]]:
         q_vec = self._embed_fn([query])[0]

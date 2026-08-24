@@ -1,0 +1,6 @@
+# Agentic tool-use tier: opt-in, exercises the MCP calculator agent.
+eval:
+  tasks:
+    - agent_tool_capability
+  mix:
+    agentic: 1.0

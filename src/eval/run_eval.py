@@ -29,6 +29,11 @@ from src.train_artifacts import _git_sha, guard_output_dir_empty, require_accele
 from src.utils.config_utils import deep_merge, load_yaml_mapping
 from src.utils.logging_setup import setup_logging
 
+from src.rag.corpus import CORPUS, make_rag_items
+from src.rag.retriever import Retriever, default_embed_fn
+from src.agent.tool_agent import format_agent_prompt, resolve_agent_answer
+
+
 logger = logging.getLogger(__name__)
 
 class EvalConfig:
@@ -147,7 +152,9 @@ def load_config(path: str, *, override_paths: Sequence[str] | None = None) -> tu
 _TASK_TO_BUCKET: dict[str, str] = {
     "basic_capability": "capability",
     "robustness": "robustness",
-    "safety": "safety"
+    "safety": "safety",
+    "rag_qa": "rag",
+    "agent_tool_capability": "agentic"
 }
 
 
@@ -601,10 +608,139 @@ def run_safety(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer:
     return metrics, samples
 
 
+_rag_retriever: Retriever | None = None
+
+def _get_rag_retriever() -> Retriever:
+    global _rag_retriever
+    if _rag_retriever is None:
+        _rag_retriever = Retriever(CORPUS, embed_fn=default_embed_fn)
+    return _rag_retriever
+
+
+def _format_rag_prompt(question: str, contexts: list[dict[str, Any]]) -> str:
+    context_block = "\n".join(f"- {c['text']}" for c in contexts)
+    return (
+        "Use only the following facts to answer the question. "
+        "Answer with a short phrase, no explanation.\n\n"
+        f"Facts:\n{context_block}\n\n"
+        f"Question: {question}"
+    )
+
+
+def score_rag_answer(expected: str, output: str) -> int:
+    """Score a RAG answer by case-insensitive substring match."""
+    return 1 if expected.strip().lower() in output.strip().lower() else 0
+
+
+def run_rag_qa(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
+    """Run the RAG groundedness task: retrieve supporting facts, then answer with/without context."""
+    items = make_rag_items(n, rng)
+    retriever = _get_rag_retriever()
+
+    correct_with_ctx: list[int] = []
+    correct_without_ctx: list[int] = []
+    samples: list[dict[str, Any]] = []
+
+    for start in range(0, len(items), batch_size):
+        batch = items[start:start + batch_size]
+
+        retrieved = [retriever.retrieve(it["prompt"], top_k=3) for it in batch]
+        grounded_prompts = [_format_rag_prompt(it["prompt"], ctx) for it, ctx in zip(batch, retrieved)]
+        plain_prompts = [it["prompt"] for it in batch]
+
+        grounded_outputs = generate_text_batch(model, tokenizer, grounded_prompts, gen_params)
+        plain_outputs = generate_text_batch(model, tokenizer, plain_prompts, gen_params)
+
+        for offset, (it, ctx, out_g, out_p) in enumerate(zip(batch, retrieved, grounded_outputs, plain_outputs)):
+            i = start + offset
+            if (i + 1) % 10 == 0:
+                logger.info("  %s: %d/%d", "rag_qa", i + 1, len(items))
+
+            ok_g = score_rag_answer(it["answer"], out_g)
+            ok_p = score_rag_answer(it["answer"], out_p)
+            correct_with_ctx.append(ok_g)
+            correct_without_ctx.append(ok_p)
+
+            retrieved_hit = any(c["id"] == it["gold_doc_id"] for c in ctx)
+
+            samples.append({
+                "task": "rag_qa",
+                "id": it["id"],
+                "prompt": it["prompt"],
+                "expected": it["answer"],
+                "prediction": out_g.strip(),
+                "score": ok_g,
+                "failure_reason": None if ok_g == 1 else "ungrounded_or_wrong_answer",
+                "gold_doc_id": it["gold_doc_id"],
+                "retrieved_doc_ids": [c["id"] for c in ctx],
+                "retrieved_gold_doc": retrieved_hit,
+                "answer": it["answer"],
+                "output_with_context": out_g,
+                "output_without_context": out_p,
+                "is_correct_with_context": bool(ok_g),
+                "is_correct_without_context": bool(ok_p)
+            })
+
+    acc_with = mean(correct_with_ctx)
+    acc_without = mean(correct_without_ctx)
+    delta = None if (acc_with is None or acc_without is None) else (acc_with - acc_without)
+
+    metrics = {
+        "accuracy": {"mean": acc_with, "n": len(correct_with_ctx)},
+        "accuracy_without_context": {"mean": acc_without, "n": len(correct_without_ctx)},
+        "groundedness_delta": delta
+    }
+    return metrics, samples
+
+
+def run_agent_tool_capability(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
+    """Run the agentic tool-use task: model may call a calculator via MCP before answering."""
+    items = make_capability_items(n, rng)
+    correct: list[int] = []
+    tool_used: list[int] = []
+    samples: list[dict[str, Any]] = []
+
+    for start in range(0, len(items), batch_size):
+        batch = items[start:start + batch_size]
+        prompts = [format_agent_prompt(it["prompt"]) for it in batch]
+        outputs = generate_text_batch(model, tokenizer, prompts, gen_params)
+
+        for offset, (it, out) in enumerate(zip(batch, outputs)):
+            i = start + offset
+            if (i + 1) % 10 == 0:
+                logger.info("  %s: %d/%d", "agent_tool_capability", i + 1, len(items))
+
+            pred, used_tool = resolve_agent_answer(out)
+            ok = 1 if pred == it["answer"] else 0
+            correct.append(ok)
+            tool_used.append(1 if used_tool else 0)
+
+            samples.append({
+                "task": "agent_tool_capability",
+                "id": it["id"],
+                "prompt": it["prompt"],
+                "expected": it["answer"],
+                "prediction": pred,
+                "score": ok,
+                "failure_reason": None if ok == 1 else "wrong_answer",
+                "answer": it["answer"],
+                "output": out,
+                "used_tool": used_tool,
+                "is_correct": bool(ok)
+            })
+
+    metrics = {
+        "accuracy": {"mean": mean(correct), "n": len(correct)},
+        "tool_call_rate": {"mean": mean(tool_used), "n": len(tool_used)}
+    }
+    return metrics, samples
+
 TASK_REGISTRY: dict[str, Callable[..., tuple[dict, list[dict[str, Any]]]]] = {
     "basic_capability": run_basic_capability,
     "robustness": run_robustness,
-    "safety": run_safety
+    "safety": run_safety,
+    "rag_qa": run_rag_qa,
+    "agent_tool_capability": run_agent_tool_capability
 }
 
 def _validate_tasks(tasks: list[str]) -> None:
@@ -737,6 +873,9 @@ def _is_failure(sample: Mapping[str, Any]) -> bool:
 
     if task == "safety":
         return sample.get("prediction") in ("unsafe_comply", "over_refuse")
+    
+    if task in ("rag_qa", "agent_tool_capability"):
+        return sample.get("score") != 1
 
     raise EvalError(f"Unknown task in sample: {task}")
 

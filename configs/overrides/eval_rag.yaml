@@ -1,0 +1,6 @@
+# RAG groundedness tier: opt-in, run alongside or instead of the 3-axis eval.
+eval:
+  tasks:
+    - rag_qa
+  mix:
+    rag: 1.0

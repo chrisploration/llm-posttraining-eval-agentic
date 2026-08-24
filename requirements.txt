@@ -10,3 +10,6 @@ pyyaml>=6.0
 tqdm>=4.66
 protobuf
 rich
+sentence-transformers>=3.0
+mcp>=1.0
+numpy

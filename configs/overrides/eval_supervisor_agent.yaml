@@ -1,0 +1,8 @@
+eval:
+  tasks:
+    - agent_supervisor_orchestration
+  mix:
+    capability: 0.0
+    robustness: 0.0
+    safety: 0.0
+    multi_agent: 1.0

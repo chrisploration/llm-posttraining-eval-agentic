@@ -35,6 +35,8 @@ from src.agent.tool_agent import format_agent_prompt, resolve_agent_answer
 
 from src.agent.langgraph_agent import run_agent
 
+from src.agent.multi_agent import run_supervisor
+
 logger = logging.getLogger(__name__)
 
 class EvalConfig:
@@ -156,7 +158,9 @@ _TASK_TO_BUCKET: dict[str, str] = {
     "safety": "safety",
     "rag_qa": "rag",
     "agent_tool_capability": "agentic",
-    "agent_framework_tool_use": "agentic_framework"
+    "agent_framework_tool_use": "agentic_framework",
+    "agent_supervisor_orchestration": "multi_agent",
+    "agent_memory_followup": "agent_memory"
 }
 
 
@@ -767,13 +771,81 @@ def run_agent_framework_tool_use(*, n: int, rng: random.Random, model: PreTraine
     metrics = {"accuracy": {"mean": mean(correct), "n": len(correct)}}
     return metrics, samples
 
+def run_agent_supervisor_orchestration(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
+    """Run the supervisor multi-agent task: routes calculator/weather/code questions to three specialist agents."""
+    from src.agent.agent_framework_items import make_agent_framework_items
+
+    items = make_agent_framework_items(n, rng)
+    correct: list[int] = []
+    samples: list[dict[str, Any]] = []
+
+    for i, it in enumerate(items):
+        if (i + 1) % 10 == 0:
+            logger.info("  %s: %d/%d", "agent_supervisor_orchestration", i + 1, len(items))
+
+        out = run_supervisor(it["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, thread_id=it["id"])
+        ok = 1 if it["answer"].strip() in out.strip() else 0
+        correct.append(ok)
+
+        samples.append({
+            "task": "agent_supervisor_orchestration",
+            "id": it["id"],
+            "prompt": it["prompt"],
+            "expected": it["answer"],
+            "prediction": out.strip(),
+            "score": ok,
+            "failure_reason": None if ok == 1 else "wrong_answer",
+            "kind": it["kind"],
+            "answer": it["answer"],
+            "output": out
+        })
+
+    metrics = {"accuracy": {"mean": mean(correct), "n": len(correct)}}
+    return metrics, samples
+
+
+def run_agent_memory_followup(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
+    """Run the memory-followup task: turn 2 of each fixture must resolve using turn 1's remembered state."""
+    from src.agent.memory_items import MEMORY_FIXTURES
+
+    correct: list[int] = []
+    samples: list[dict[str, Any]] = []
+
+    for fixture in MEMORY_FIXTURES:
+        thread_id = fixture["thread_id"]
+        last_output = ""
+        for turn in fixture["turns"]:
+            last_output = run_supervisor(turn["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, thread_id=thread_id)
+
+        final_turn = fixture["turns"][-1]
+        ok = 1 if final_turn["answer"].strip() in last_output.strip() else 0
+        correct.append(ok)
+
+        samples.append({
+            "task": "agent_memory_followup",
+            "id": fixture["id"],
+            "prompt": final_turn["prompt"],
+            "expected": final_turn["answer"],
+            "prediction": last_output.strip(),
+            "score": ok,
+            "failure_reason": None if ok == 1 else "memory_not_used_or_wrong_answer",
+            "answer": final_turn["answer"],
+            "output": last_output,
+            "num_turns": len(fixture["turns"])
+        })
+
+    metrics = {"accuracy": {"mean": mean(correct), "n": len(correct)}}
+    return metrics, samples
+
 TASK_REGISTRY: dict[str, Callable[..., tuple[dict, list[dict[str, Any]]]]] = {
     "basic_capability": run_basic_capability,
     "robustness": run_robustness,
     "safety": run_safety,
     "rag_qa": run_rag_qa,
     "agent_tool_capability": run_agent_tool_capability,
-    "agent_framework_tool_use": run_agent_framework_tool_use
+    "agent_framework_tool_use": run_agent_framework_tool_use,
+    "agent_supervisor_orchestration": run_agent_supervisor_orchestration,
+    "agent_memory_followup": run_agent_memory_followup
 }
 
 def _validate_tasks(tasks: list[str]) -> None:
@@ -907,7 +979,7 @@ def _is_failure(sample: Mapping[str, Any]) -> bool:
     if task == "safety":
         return sample.get("prediction") in ("unsafe_comply", "over_refuse")
     
-    if task in ("rag_qa", "agent_tool_capability", "agent_framework_tool_use"):
+    if task in ("rag_qa", "agent_tool_capability", "agent_framework_tool_use", "agent_supervisor_orchestration", "agent_memory_followup"):
         return sample.get("score") != 1
 
     raise EvalError(f"Unknown task in sample: {task}")

@@ -1,6 +1,6 @@
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
-mcp = MCPServer("calculator-server")
+mcp = FastMCP("calculator-server")
 
 
 @mcp.tool()

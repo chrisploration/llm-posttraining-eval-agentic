@@ -1,0 +1,52 @@
+{
+  "paris": {
+    "lat": 48.8566,
+    "lon": 2.3522,
+    "temperature_c": 18.9
+  },
+  "tokyo": {
+    "lat": 35.6762,
+    "lon": 139.6503,
+    "temperature_c": 32.8
+  },
+  "cairo": {
+    "lat": 30.0444,
+    "lon": 31.2357,
+    "temperature_c": 23.7
+  },
+  "london": {
+    "lat": 51.5074,
+    "lon": -0.1278,
+    "temperature_c": 17.0
+  },
+  "new york": {
+    "lat": 40.7128,
+    "lon": -74.006,
+    "temperature_c": 19.5
+  },
+  "sydney": {
+    "lat": -33.8688,
+    "lon": 151.2093,
+    "temperature_c": 18.1
+  },
+  "berlin": {
+    "lat": 52.52,
+    "lon": 13.405,
+    "temperature_c": 13.9
+  },
+  "moscow": {
+    "lat": 55.7558,
+    "lon": 37.6173,
+    "temperature_c": 12.3
+  },
+  "sao paulo": {
+    "lat": -23.5505,
+    "lon": -46.6333,
+    "temperature_c": 13.6
+  },
+  "mumbai": {
+    "lat": 19.076,
+    "lon": 72.8777,
+    "temperature_c": 27.0
+  }
+}

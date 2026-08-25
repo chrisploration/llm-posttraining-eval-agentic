@@ -13,3 +13,8 @@ rich
 sentence-transformers>=3.0
 mcp>=1.0
 numpy
+chromadb>=0.5
+langgraph>=0.2
+langchain-mcp-adapters>=0.1
+langchain-huggingface>=0.1
+requests

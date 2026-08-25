@@ -35,7 +35,8 @@ echo "=== Setup complete. Running pipeline... ==="
 # refuses to write into a non-empty directory, and a fresh clone still carries
 # whatever results/ content is committed to git history.
 rm -rf results/baseline results/posttrained results/rag results/agentic \
-       results/langgraph_agent results/supervisor_agent results/agent_memory
+       results/langgraph_agent results/supervisor_agent results/agent_memory \
+       checkpoints/post_v1
 
 
 # Step 1: Baseline evaluation

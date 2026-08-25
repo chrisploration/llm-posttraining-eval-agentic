@@ -33,7 +33,7 @@ echo "=== Setup complete. Running pipeline... ==="
 
 # Step 1: Baseline evaluation
 echo ""
-echo "=== Step 1/7: Baseline evaluation ==="
+echo "=== Step 1/9: Baseline evaluation ==="
 python3 -m src.eval.run_eval \
     --config configs/eval.yaml \
     --output_dir results/baseline \
@@ -42,7 +42,7 @@ python3 -m src.eval.run_eval \
 
 # Step 2: Posttraining
 echo ""
-echo "=== Step 2/7: Posttraining ==="
+echo "=== Step 2/9: Posttraining ==="
 python3 -m src.train \
     --config configs/posttrain.yaml \
     --override configs/overrides/posttrain_synth.yaml
@@ -50,7 +50,7 @@ python3 -m src.train \
 
 # Step 3: Posttrained evaluation
 echo ""
-echo "=== Step 3/7: Posttrained evaluation ==="
+echo "=== Step 3/9: Posttrained evaluation ==="
 python3 -m src.eval.run_eval \
     --config configs/eval.yaml \
     --output_dir results/posttrained \
@@ -61,7 +61,7 @@ python3 -m src.eval.run_eval \
 
 # Step 4: Compare baseline vs post-trained results
 echo ""
-echo "=== Step 4/7: Compare baseline vs post-trained results ==="
+echo "=== Step 4/9: Compare baseline vs post-trained results ==="
 python3 -m src.compare \
     --baseline results/baseline \
     --candidate results/posttrained \
@@ -72,7 +72,7 @@ python3 -m src.compare \
 
 # Step 5: RAG groundedness evaluation
 echo ""
-echo "=== Step 5/7: RAG groundedness evaluation ==="
+echo "=== Step 5/9: RAG groundedness evaluation ==="
 python3 -m src.eval.run_eval \
     --config configs/eval.yaml \
     --override configs/overrides/eval_rag.yaml \
@@ -83,7 +83,7 @@ python3 -m src.eval.run_eval \
 
 # Step 6: Hand-rolled MCP tool-use agent evaluation
 echo ""
-echo "=== Step 6/7: Hand-rolled MCP tool-use agent evaluation ==="
+echo "=== Step 6/9: Hand-rolled MCP tool-use agent evaluation ==="
 python3 -m src.eval.run_eval \
     --config configs/eval.yaml \
     --override configs/overrides/eval_agentic.yaml \
@@ -94,7 +94,7 @@ python3 -m src.eval.run_eval \
 
 # Step 7: LangGraph framework agent evaluation
 echo ""
-echo "=== Step 7/7: LangGraph framework agent evaluation ==="
+echo "=== Step 7/9: LangGraph framework agent evaluation ==="
 python3 -m src.eval.run_eval \
     --config configs/eval.yaml \
     --override configs/overrides/eval_langgraph_agent.yaml \
@@ -103,9 +103,35 @@ python3 -m src.eval.run_eval \
     --mode baseline
 
 
+# Step 8: Multi-agent supervisor evaluation (calculator/weather/coder specialists)
+echo ""
+echo "=== Step 8/9: Multi-agent supervisor evaluation ==="
+python3 -m src.eval.run_eval \
+    --config configs/eval.yaml \
+    --override configs/overrides/eval_supervisor_agent.yaml \
+    --override configs/overrides/eval_smoke.yaml \
+    --output_dir results/supervisor_agent \
+    --mode baseline
+
+
+# Step 9: Agent memory-followup evaluation
+echo ""
+echo "=== Step 9/9: Agent memory-followup evaluation ==="
+python3 -m src.eval.run_eval \
+    --config configs/eval.yaml \
+    --override configs/overrides/eval_agent_memory.yaml \
+    --output_dir results/agent_memory \
+    --mode baseline
+
 echo ""
 echo "=== Pipeline complete ==="
 echo "Comparison report: results/comparison.md"
 echo "RAG results: results/rag/metrics.json"
 echo "Agentic (hand-rolled MCP) results: results/agentic/metrics.json"
 echo "Agentic (LangGraph) results: results/langgraph_agent/metrics.json"
+echo "Agentic (multi-agent supervisor) results: results/supervisor_agent/metrics.json"
+echo "Agentic (memory followup) results: results/agent_memory/metrics.json"
+echo ""
+echo "Not run automatically (optional, need extra setup):"
+echo " - Langfuse tracing: export LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY/LANGFUSE_HOST first, then re-run any agent task"
+echo " - LiteLLM judge on rag_qa: needs 'ollama serve' + 'ollama pull mistral' running, then LITELLM_JUDGE=1 before the RAG eval step"

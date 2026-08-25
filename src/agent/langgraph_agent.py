@@ -25,6 +25,15 @@ _MCP_SERVERS: dict[str, dict[str, Any]] = {
 }
 
 
+class _AsyncBridgedChatHuggingFace(ChatHuggingFace):
+    """ChatHuggingFace only implements sync generation; LangGraph's MCP-tool
+    agents require async invocation, since MCP tools are async-native.
+    Bridge the two by running the sync generation in a worker thread."""
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        return await asyncio.to_thread(self._generate, messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
 def build_chat_model(model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any]) -> ChatHuggingFace:
     """Wrap the already-loaded eval model/tokenizer as a LangChain chat model — no second model load."""
     pipe = hf_pipeline(
@@ -40,7 +49,7 @@ def build_chat_model(model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase,
         return_full_text=False
     )
     llm = HuggingFacePipeline(pipeline=pipe)
-    return ChatHuggingFace(llm=llm, tokenizer=tokenizer)
+    return _AsyncBridgedChatHuggingFace(llm=llm, tokenizer=tokenizer)
 
 
 async def _run_agent_async(question: str, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], *, callbacks: list[Any] | None = None) -> str:

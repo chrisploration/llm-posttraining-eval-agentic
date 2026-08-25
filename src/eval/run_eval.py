@@ -744,6 +744,11 @@ def run_agent_tool_capability(*, n: int, rng: random.Random, model: PreTrainedMo
 
 def run_agent_framework_tool_use(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
     """Run the LangGraph+MCP agent-framework task: single ReAct agent routes between calculator and weather tools."""
+    from src.observability.tracing import get_langfuse_handler
+
+    handler = get_langfuse_handler()
+    callbacks = [handler] if handler else None
+    
     items = make_capability_items(n, rng)
     correct: list[int] = []
     samples: list[dict[str, Any]] = []
@@ -752,7 +757,7 @@ def run_agent_framework_tool_use(*, n: int, rng: random.Random, model: PreTraine
         if (i + 1) % 10 == 0:
             logger.info("  %s: %d/%d", "agent_framework_tool_use", i + 1, len(items))
 
-        out = run_agent(it["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params)
+        out = run_agent(it["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, callbacks=callbacks)
         ok = 1 if it["answer"].strip() in out.strip() else 0
         correct.append(ok)
 
@@ -774,6 +779,10 @@ def run_agent_framework_tool_use(*, n: int, rng: random.Random, model: PreTraine
 def run_agent_supervisor_orchestration(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
     """Run the supervisor multi-agent task: routes calculator/weather/code questions to three specialist agents."""
     from src.agent.agent_framework_items import make_agent_framework_items
+    from src.observability.tracing import get_langfuse_handler
+
+    handler = get_langfuse_handler()
+    callbacks = [handler] if handler else None
 
     items = make_agent_framework_items(n, rng)
     correct: list[int] = []
@@ -783,7 +792,7 @@ def run_agent_supervisor_orchestration(*, n: int, rng: random.Random, model: Pre
         if (i + 1) % 10 == 0:
             logger.info("  %s: %d/%d", "agent_supervisor_orchestration", i + 1, len(items))
 
-        out = run_supervisor(it["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, thread_id=it["id"])
+        out = run_supervisor(it["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, thread_id=it["id"], callbacks=callbacks)
         ok = 1 if it["answer"].strip() in out.strip() else 0
         correct.append(ok)
 
@@ -807,6 +816,10 @@ def run_agent_supervisor_orchestration(*, n: int, rng: random.Random, model: Pre
 def run_agent_memory_followup(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
     """Run the memory-followup task: turn 2 of each fixture must resolve using turn 1's remembered state."""
     from src.agent.memory_items import MEMORY_FIXTURES
+    from src.observability.tracing import get_langfuse_handler
+
+    handler = get_langfuse_handler()
+    callbacks = [handler] if handler else None
 
     correct: list[int] = []
     samples: list[dict[str, Any]] = []
@@ -815,7 +828,7 @@ def run_agent_memory_followup(*, n: int, rng: random.Random, model: PreTrainedMo
         thread_id = fixture["thread_id"]
         last_output = ""
         for turn in fixture["turns"]:
-            last_output = run_supervisor(turn["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, thread_id=thread_id)
+            last_output = run_supervisor(turn["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params, thread_id=thread_id, callbacks=callbacks)
 
         final_turn = fixture["turns"][-1]
         ok = 1 if final_turn["answer"].strip() in last_output.strip() else 0

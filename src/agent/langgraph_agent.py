@@ -43,19 +43,24 @@ def build_chat_model(model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase,
     return ChatHuggingFace(llm=llm, tokenizer=tokenizer)
 
 
-async def _run_agent_async(question: str, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any]) -> str:
+async def _run_agent_async(question: str, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], *, callbacks: list[Any] | None = None) -> str:
     chat_model = build_chat_model(model, tokenizer, gen_params)
 
     client = MultiServerMCPClient(_MCP_SERVERS)
     tools = await client.get_tools()
 
     agent = create_react_agent(chat_model, tools)
-    result = await agent.ainvoke({"messages": [("user", question)]})
+    
+    config: dict[str, Any] = {}
+    if callbacks:
+        config["callbacks"] = callbacks
+    
+    result = await agent.ainvoke({"messages": [("user", question)]}, config=config)
 
     final_message = result["messages"][-1]
     return str(final_message.content)
 
 
-def run_agent(question: str, *, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any]) -> str:
+def run_agent(question: str, *, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], callbacks: list[Any] | None = None) -> str:
     """Synchronous entry point: run one question through the LangGraph MCP agent."""
-    return asyncio.run(_run_agent_async(question, model, tokenizer, gen_params))
+    return asyncio.run(_run_agent_async(question, model, tokenizer, gen_params, callbacks=callbacks))

@@ -19,3 +19,4 @@ langchain-mcp-adapters>=0.1
 langchain-huggingface>=0.1
 requests
 langgraph-supervisor>=0.0.9
+langfuse>=2.0

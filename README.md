@@ -386,7 +386,7 @@ run without GPU.
 - Add active guardrails (input/output filtering, tool-call allowlisting). Currently the safety axis only measures unsafe behavior, it doesn't prevent it
 - Activate Langfuse tracing and the LiteLLM judge end-to-end (both are wired in but need external setup — a Langfuse account, a running Ollama instance — to actually produce output)
 - A harder arithmetic task to meaningfully differentiate the hand-rolled and LangGraph agents, since two-digit addition is solvable without either agent's tool-calling path
-```
+
 
 ## License
 

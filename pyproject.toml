@@ -28,7 +28,8 @@ dependencies = [
     "langchain-huggingface>=0.1",
     "requests",
     "langgraph-supervisor>=0.0.9",
-    "langfuse>=2.0"
+    "langfuse>=2.0",
+    "litellm>=1.0"
 ]
 
 [tool.setuptools.packages.find]

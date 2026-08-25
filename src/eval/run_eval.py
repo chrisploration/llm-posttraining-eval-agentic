@@ -669,6 +669,12 @@ def run_rag_qa(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer:
 
             retrieved_hit = any(c["id"] == it["gold_doc_id"] for c in ctx)
 
+            judge_verdict = None
+            if os.environ.get("LITELLM_JUDGE") == "1":
+                from src.llm_proxy.litellm_client import judge_groundedness
+                context_text = "\n".join(c["text"] for c in ctx)
+                judge_verdict = judge_groundedness(it["prompt"], context_text, out_g)
+
             samples.append({
                 "task": "rag_qa",
                 "id": it["id"],
@@ -696,6 +702,14 @@ def run_rag_qa(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer:
         "accuracy_without_context": {"mean": acc_without, "n": len(correct_without_ctx)},
         "groundedness_delta": delta
     }
+
+    judge_verdicts = [s["llm_judge_groundedness"] for s in samples if s["llm_judge_groundedness"] is not None]
+    if judge_verdicts:
+        metrics["llm_judge_groundedness"] = {
+            "mean": sum(1 for v in judge_verdicts if v) / len(judge_verdicts),
+            "n": len(judge_verdicts)
+        }
+
     return metrics, samples
 
 

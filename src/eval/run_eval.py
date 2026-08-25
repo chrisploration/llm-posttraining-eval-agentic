@@ -703,7 +703,7 @@ def run_rag_qa(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer:
         "groundedness_delta": delta
     }
 
-    judge_verdicts = [s["llm_judge_groundedness"] for s in samples if s["llm_judge_groundedness"] is not None]
+    judge_verdicts = [s.get("llm_judge_groundedness") for s in samples if s.get("llm_judge_groundedness") is not None]
     if judge_verdicts:
         metrics["llm_judge_groundedness"] = {
             "mean": sum(1 for v in judge_verdicts if v) / len(judge_verdicts),

@@ -33,6 +33,7 @@ from src.rag.corpus import CORPUS, make_rag_items
 from src.rag.retriever import Retriever, default_embed_fn
 from src.agent.tool_agent import format_agent_prompt, resolve_agent_answer
 
+from src.agent.langgraph_agent import run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,8 @@ _TASK_TO_BUCKET: dict[str, str] = {
     "robustness": "robustness",
     "safety": "safety",
     "rag_qa": "rag",
-    "agent_tool_capability": "agentic"
+    "agent_tool_capability": "agentic",
+    "agent_framework_tool_use": "agentic_framework"
 }
 
 
@@ -735,12 +737,43 @@ def run_agent_tool_capability(*, n: int, rng: random.Random, model: PreTrainedMo
     }
     return metrics, samples
 
+
+def run_agent_framework_tool_use(*, n: int, rng: random.Random, model: PreTrainedModel, tokenizer: PreTrainedTokenizerBase, gen_params: Mapping[str, Any], batch_size: int) -> tuple[dict, list[dict[str, Any]]]:
+    """Run the LangGraph+MCP agent-framework task: single ReAct agent routes between calculator and weather tools."""
+    items = make_capability_items(n, rng)
+    correct: list[int] = []
+    samples: list[dict[str, Any]] = []
+
+    for i, it in enumerate(items):
+        if (i + 1) % 10 == 0:
+            logger.info("  %s: %d/%d", "agent_framework_tool_use", i + 1, len(items))
+
+        out = run_agent(it["prompt"], model=model, tokenizer=tokenizer, gen_params=gen_params)
+        ok = 1 if it["answer"].strip() in out.strip() else 0
+        correct.append(ok)
+
+        samples.append({
+            "task": "agent_framework_tool_use",
+            "id": it["id"],
+            "prompt": it["prompt"],
+            "expected": it["answer"],
+            "prediction": out.strip(),
+            "score": ok,
+            "failure_reason": None if ok == 1 else "wrong_answer",
+            "answer": it["answer"],
+            "output": out
+        })
+
+    metrics = {"accuracy": {"mean": mean(correct), "n": len(correct)}}
+    return metrics, samples
+
 TASK_REGISTRY: dict[str, Callable[..., tuple[dict, list[dict[str, Any]]]]] = {
     "basic_capability": run_basic_capability,
     "robustness": run_robustness,
     "safety": run_safety,
     "rag_qa": run_rag_qa,
-    "agent_tool_capability": run_agent_tool_capability
+    "agent_tool_capability": run_agent_tool_capability,
+    "agent_framework_tool_use": run_agent_framework_tool_use
 }
 
 def _validate_tasks(tasks: list[str]) -> None:
@@ -874,7 +907,7 @@ def _is_failure(sample: Mapping[str, Any]) -> bool:
     if task == "safety":
         return sample.get("prediction") in ("unsafe_comply", "over_refuse")
     
-    if task in ("rag_qa", "agent_tool_capability"):
+    if task in ("rag_qa", "agent_tool_capability", "agent_framework_tool_use"):
         return sample.get("score") != 1
 
     raise EvalError(f"Unknown task in sample: {task}")
